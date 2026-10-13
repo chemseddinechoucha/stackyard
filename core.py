@@ -184,6 +184,19 @@ def set_app_user_model_id(app_id: str = "Stackyard.Manager") -> None:
             pass
 
 
+def set_dpi_awareness() -> None:
+    """Render text crisply on high-DPI displays. Must run before the first Tk window is created."""
+    if not IS_WIN:
+        return
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)   # system DPI aware (Windows 8.1+)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()      # older Windows
+        except Exception:
+            pass
+
+
 def relaunch_as_admin() -> None:
     script = str(Path(sys.argv[0]).resolve())
     params = " ".join(f'"{a}"' for a in [script] + sys.argv[1:])

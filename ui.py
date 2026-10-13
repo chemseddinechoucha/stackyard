@@ -14,11 +14,35 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import core
 import installer
+import theme
 
 ASSETS = core.APP_DIR / "assets"
 
-STATE_COLORS = {"running": "#2e9e4f", "starting": "#e0a020", "external": "#3b82c4", "stopped": "#b0b0b0"}
+STATE_COLORS = {"running": theme.PALETTE["success"], "starting": theme.PALETTE["warning"],
+                "external": theme.PALETTE["info"], "stopped": theme.PALETTE["stopped"]}
 STATE_TEXT = {"running": "Running", "starting": "Starting...", "external": "Running (external)", "stopped": "Stopped"}
+
+
+def _walk(widget):
+    yield widget
+    for child in widget.winfo_children():
+        yield from _walk(child)
+
+
+def _bind_card_hover(card, outer, normal_color, hover_color):
+    """Highlight a card's border while the pointer is anywhere over it."""
+    def update(_e=None):
+        try:
+            px, py = card.winfo_pointerxy()
+            w = card.winfo_containing(px, py)
+        except tk.TclError:
+            w = None
+        inside = w is not None and (w is card or str(w).startswith(str(card) + "."))
+        outer.configure(background=hover_color if inside else normal_color)
+    for w in _walk(card):
+        w.bind("<Enter>", update, add="+")
+        w.bind("<Leave>", update, add="+")
+
 
 APPS = [
     ("phpmyadmin", "phpMyAdmin", "Web interface for MySQL (installed in www\\phpmyadmin)"),
@@ -144,8 +168,14 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Stackyard - local development environment")
-        self.geometry("1020x760")
-        self.minsize(900, 620)
+        try:                                    # match Tk's points-per-pixel to the real display DPI
+            self.tk.call("tk", "scaling", self.winfo_fpixels("1i") / 72.0)
+        except tk.TclError:
+            pass
+        self.theme = theme.apply(self)
+        self.configure(background=self.theme["palette"]["window"])
+        self.geometry("1140x820")
+        self.minsize(980, 680)
         self._set_icon()
         self.cfg = core.Config()
         self.q: queue.Queue = queue.Queue()
@@ -158,16 +188,15 @@ class App(tk.Tk):
         self.cfg_index: int | None = None
         self._crlf = False
 
-        self._style()
         self._header()
         self._build_log()
         self.nb = ttk.Notebook(self)
-        self.nb.pack(fill="both", expand=True, padx=10, pady=(0, 6))
-        self.tab_services = ttk.Frame(self.nb)
-        self.tab_versions = ttk.Frame(self.nb)
-        self.tab_config = ttk.Frame(self.nb)
-        self.tab_vhosts = ttk.Frame(self.nb)
-        self.tab_apps = ttk.Frame(self.nb)
+        self.nb.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        self.tab_services = ttk.Frame(self.nb, style="Tab.TFrame")
+        self.tab_versions = ttk.Frame(self.nb, style="Tab.TFrame")
+        self.tab_config = ttk.Frame(self.nb, style="Tab.TFrame")
+        self.tab_vhosts = ttk.Frame(self.nb, style="Tab.TFrame")
+        self.tab_apps = ttk.Frame(self.nb, style="Tab.TFrame")
         for t, name in ((self.tab_services, "Services"), (self.tab_versions, "Versions"),
                         (self.tab_config, "Configuration"), (self.tab_vhosts, "Virtual hosts"),
                         (self.tab_apps, "Apps")):
@@ -233,16 +262,14 @@ class App(tk.Tk):
         threading.Thread(target=run, daemon=True).start()
 
     # ------------------------------------------------------------------ chrome
-    def _style(self):
-        st = ttk.Style(self)
-        for theme in ("vista", "clam"):
-            if theme in st.theme_names():
-                st.theme_use(theme)
-                break
-        st.configure("Title.TLabel", font=("Segoe UI", 16, "bold"))
-        st.configure("Svc.TLabel", font=("Segoe UI", 11, "bold"))
-        st.configure("Dim.TLabel", foreground="#666666")
-        st.configure("Accent.TButton", font=("Segoe UI", 9, "bold"))
+    def _button(self, parent, text, command, style="TButton", **kw):
+        """A themed button with a hand cursor (all action buttons look clickable)."""
+        return ttk.Button(parent, text=text, command=command, style=style, cursor="hand2", **kw)
+
+    @staticmethod
+    def _bind_hover(widget, on_enter, on_leave):
+        widget.bind("<Enter>", lambda _e: on_enter(), add="+")
+        widget.bind("<Leave>", lambda _e: on_leave(), add="+")
 
     def _set_icon(self):
         """Window + taskbar icon. Missing or unreadable assets are ignored (the app works without them)."""
@@ -257,22 +284,32 @@ class App(tk.Tk):
             pass
 
     def _header(self):
-        h = ttk.Frame(self)
-        h.pack(fill="x", padx=14, pady=(10, 6))
+        p = self.theme["palette"]
+        h = ttk.Frame(self, style="Header.TFrame", padding=(18, 12))
+        h.pack(fill="x")
+        tk.Frame(self, height=1, background=p["border"]).pack(fill="x")
+
+        left = ttk.Frame(h, style="Header.TFrame")
+        left.pack(side="left", fill="x", expand=True)
+        top = ttk.Frame(left, style="Header.TFrame")
+        top.pack(anchor="w")
         try:
             self._mark_img = tk.PhotoImage(file=str(ASSETS / "stackyard-mark-32.png"))
-            ttk.Label(h, image=self._mark_img).pack(side="left", padx=(0, 9))
+            ttk.Label(top, image=self._mark_img, style="Card.TLabel").pack(side="left", padx=(0, 10))
         except tk.TclError:
             pass
-        ttk.Label(h, text="Stackyard", style="Title.TLabel").pack(side="left")
-        self.root_lbl = ttk.Label(h, text=f"   {core.BASE_DIR}", style="Dim.TLabel")
-        self.root_lbl.pack(side="left")
-        ttk.Button(h, text="Change root folder...", command=self.change_root).pack(side="right", padx=(6, 0))
+        ttk.Label(top, text="Stackyard", style="HeaderTitle.TLabel").pack(side="left")
+        self.root_lbl = ttk.Label(left, text=f"Root folder:  {core.BASE_DIR}", style="HeaderSub.TLabel")
+        self.root_lbl.pack(anchor="w", pady=(2, 0))
+
+        right = ttk.Frame(h, style="Header.TFrame")
+        right.pack(side="right")
+        self._button(right, "Change root folder...", self.change_root).pack(side="right", padx=(8, 0))
         if core.IS_WIN:
             if core.is_admin():
-                ttk.Label(h, text="Administrator", foreground="#2e9e4f").pack(side="right")
+                ttk.Label(right, text="Administrator", style="Admin.TLabel").pack(side="right")
             else:
-                ttk.Button(h, text="Restart as administrator", command=self.restart_admin).pack(side="right")
+                self._button(right, "Restart as administrator", self.restart_admin).pack(side="right")
 
     def restart_admin(self):
         if messagebox.askyesno("Stackyard", "Restart Stackyard with administrator rights?\n"
@@ -281,15 +318,24 @@ class App(tk.Tk):
             self.destroy()
 
     def _build_log(self):
-        box = ttk.LabelFrame(self, text="Log")
-        box.pack(side="bottom", fill="x", padx=10, pady=(0, 10))
-        self.logbox = tk.Text(box, height=8, state="disabled", wrap="word", font=("Consolas", 9),
-                              background="#fafafa", relief="flat")
-        sb = ttk.Scrollbar(box, command=self.logbox.yview)
+        p = self.theme["palette"]
+        card = theme.make_card(self, padding=(14, 10))
+        card._card_outer.pack(side="bottom", fill="x", padx=12, pady=(0, 12))
+        head = ttk.Frame(card, style="Card.TFrame")
+        head.pack(fill="x")
+        ttk.Label(head, text="Log", style="CardTitle.TLabel").pack(side="left")
+        self._button(head, "Clear", self._clear_log, width=7).pack(side="right")
+        holder = ttk.Frame(card, style="Card.TFrame")
+        holder.pack(fill="x", pady=(8, 0))
+        self.logbox = tk.Text(holder, height=8, state="disabled", wrap="word",
+                              font=self.theme["mono_font"], background=p["surface_alt"],
+                              foreground=p["text"], relief="flat", padx=10, pady=8,
+                              highlightthickness=1, highlightbackground=p["border"],
+                              highlightcolor=p["border"])
+        sb = ttk.Scrollbar(holder, command=self.logbox.yview)
         self.logbox.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
-        self.logbox.pack(fill="x", padx=4, pady=4)
-        ttk.Button(box, text="Clear", width=6, command=self._clear_log).place(relx=1.0, rely=0.0, x=-26, y=-18, anchor="ne")
+        self.logbox.pack(side="left", fill="both", expand=True)
 
     def _clear_log(self):
         self.logbox.configure(state="normal")
@@ -352,7 +398,7 @@ class App(tk.Tk):
         moved, notes = res
         for n in notes:
             self.log(n)
-        self.root_lbl.configure(text=f"   {core.BASE_DIR}")
+        self.root_lbl.configure(text=f"Root folder:  {core.BASE_DIR}")
         self.log(f"Root folder is now {core.BASE_DIR}" + (f" ({moved} virtual host path(s) moved)" if moved else ""))
         self.refresh_versions()
         self.refresh_apps()
@@ -387,49 +433,52 @@ class App(tk.Tk):
         f = self.tab_services
         for w in f.winfo_children():
             w.destroy()
-        top = ttk.Frame(f)
-        top.pack(fill="x", padx=12, pady=(12, 6))
-        ttk.Button(top, text="Start all", command=self.start_all).pack(side="left")
-        ttk.Button(top, text="Stop all", command=self.stop_all).pack(side="left", padx=6)
-        ttk.Button(top, text="+ Custom service", command=self.add_custom_service).pack(side="left", padx=(18, 0))
-        ttk.Button(top, text="Open terminal", command=self.open_terminal).pack(side="right")
-        ttk.Button(top, text="www folder", command=lambda: core.open_path(core.WWW_DIR)).pack(side="right", padx=6)
-        ttk.Button(top, text="localhost", command=lambda: webbrowser.open("http://localhost/")).pack(side="right")
+        p = self.theme["palette"]
+        top = ttk.Frame(f, style="Tab.TFrame")
+        top.pack(fill="x", padx=14, pady=(14, 8))
+        self._button(top, "Start all", self.start_all, style="Accent.TButton").pack(side="left")
+        self._button(top, "Stop all", self.stop_all).pack(side="left", padx=8)
+        self._button(top, "+ Custom service", self.add_custom_service).pack(side="left", padx=(20, 0))
+        self._button(top, "Open terminal", self.open_terminal).pack(side="right")
+        self._button(top, "www folder", lambda: core.open_path(core.WWW_DIR)).pack(side="right", padx=8)
+        self._button(top, "localhost", lambda: webbrowser.open("http://localhost/")).pack(side="right")
 
-        self.svc_box = ttk.Frame(f)
-        self.svc_box.pack(fill="x", padx=12, pady=6)
+        self.svc_box = ttk.Frame(f, style="Tab.TFrame")
+        self.svc_box.pack(fill="x", padx=14, pady=6)
         self.rows = {}
-        for i, (key, svc) in enumerate(self.services.items()):
-            row = ttk.Frame(self.svc_box, padding=(8, 8))
-            row.pack(fill="x", pady=2)
-            dot = tk.Canvas(row, width=16, height=16, highlightthickness=0)
-            dot.pack(side="left", padx=(0, 10))
-            oval = dot.create_oval(2, 2, 14, 14, fill=STATE_COLORS["stopped"], outline="")
-            info = ttk.Frame(row)
+        for key, svc in self.services.items():
+            card = theme.make_card(self.svc_box, padding=(16, 14))
+            outer = card._card_outer
+            outer.pack(fill="x", pady=6)
+            dot = tk.Canvas(card, width=22, height=22, highlightthickness=0, background=p["surface"])
+            dot.pack(side="left", padx=(0, 14))
+            oval = dot.create_oval(3, 3, 19, 19, fill=STATE_COLORS["stopped"], outline="")
+            info = ttk.Frame(card, style="Card.TFrame")
             info.pack(side="left", fill="x", expand=True)
             ttk.Label(info, text=svc.label, style="Svc.TLabel").pack(anchor="w")
-            detail = ttk.Label(info, text="", style="Dim.TLabel")
+            detail = ttk.Label(info, text="", style="RowMuted.TLabel")
             detail.pack(anchor="w")
-            state = ttk.Label(row, text="Stopped", width=18)
-            state.pack(side="left", padx=8)
-            b_start = ttk.Button(row, text="Start", width=8, command=lambda k=key: self.svc_action(k, "start"))
-            b_stop = ttk.Button(row, text="Stop", width=8, command=lambda k=key: self.svc_action(k, "stop"))
-            b_rest = ttk.Button(row, text="Restart", width=8, command=lambda k=key: self.svc_action(k, "restart"))
+            state = ttk.Label(card, text="Stopped", style="Card.TLabel", width=18)
+            state.pack(side="left", padx=12)
+            b_start = self._button(card, "Start", lambda k=key: self.svc_action(k, "start"), style="Accent.TButton", width=9)
+            b_stop = self._button(card, "Stop", lambda k=key: self.svc_action(k, "stop"), width=9)
+            b_rest = self._button(card, "Restart", lambda k=key: self.svc_action(k, "restart"), width=9)
             for b in (b_start, b_stop, b_rest):
-                b.pack(side="left", padx=2)
+                b.pack(side="left", padx=4)
             if key.startswith("custom-"):
-                ttk.Button(row, text="x", width=3, command=lambda k=key: self.remove_custom_service(k)).pack(side="left", padx=(8, 0))
+                self._button(card, "Remove", lambda k=key: self.remove_custom_service(k),
+                             style="Danger.TButton").pack(side="left", padx=(12, 0))
             self.rows[key] = dict(dot=dot, oval=oval, detail=detail, state=state, start=b_start, stop=b_stop, restart=b_rest)
-            ttk.Separator(self.svc_box).pack(fill="x")
+            _bind_card_hover(card, outer, p["border"], p["accent"])
 
-        opts = ttk.Frame(f)
-        opts.pack(fill="x", padx=12, pady=10)
+        opts = ttk.Frame(f, style="Tab.TFrame")
+        opts.pack(fill="x", padx=14, pady=12)
         self.var_stop_exit = tk.BooleanVar(value=bool(self.cfg.data.get("stop_on_exit")))
         ttk.Checkbutton(opts, text="Stop services automatically when Stackyard closes", variable=self.var_stop_exit,
                         command=self._save_stop_exit).pack(anchor="w")
         ttk.Label(f, text=("Services started here keep running if you close Stackyard (unless the option above is on). "
                            "Stackyard re-detects them the next time it opens."), style="Dim.TLabel",
-                  wraplength=900).pack(anchor="w", padx=12)
+                  wraplength=980, justify="left").pack(anchor="w", padx=14, pady=(0, 6))
 
     def _save_stop_exit(self):
         self.cfg.data["stop_on_exit"] = bool(self.var_stop_exit.get())
@@ -536,25 +585,26 @@ class App(tk.Tk):
         self.ver = {}
         ttk.Label(f, text=("Drop a new version next to the others (e.g. php-8.4.1) and press Rescan. "
                            "Activating a version re-points the 'current' junction for that tool and regenerates the Apache config."),
-                  style="Dim.TLabel", wraplength=900).pack(anchor="w", padx=14, pady=(10, 2))
-        bar = ttk.Frame(f)  # at the TOP so it is never cut off on small windows
-        bar.pack(fill="x", padx=12, pady=(4, 2))
-        ttk.Button(bar, text="Rescan", command=self.refresh_versions).pack(side="left")
-        ttk.Button(bar, text="Open base folder", command=lambda: core.open_path(core.BASE_DIR)).pack(side="left", padx=6)
-        ttk.Button(bar, text="Add Stackyard tools to my PATH", command=self.add_path).pack(side="left", padx=6)
+                  style="Dim.TLabel", wraplength=980, justify="left").pack(anchor="w", padx=14, pady=(14, 2))
+        bar = ttk.Frame(f, style="Tab.TFrame")  # at the TOP so it is never cut off on small windows
+        bar.pack(fill="x", padx=14, pady=(6, 4))
+        self._button(bar, "Rescan", self.refresh_versions).pack(side="left")
+        self._button(bar, "Open base folder", lambda: core.open_path(core.BASE_DIR)).pack(side="left", padx=8)
+        self._button(bar, "Add Stackyard tools to my PATH", self.add_path).pack(side="left", padx=8)
         for tool, meta in core.TOOLS.items():
-            box = ttk.LabelFrame(f, text=meta["label"])
-            box.pack(fill="x", padx=12, pady=3)
-            top = ttk.Frame(box)
-            top.pack(fill="x", padx=8, pady=(4, 2))
+            card = theme.make_card(f, padding=(16, 14))
+            card._card_outer.pack(fill="x", padx=14, pady=6)
+            ttk.Label(card, text=meta["label"], style="CardTitle.TLabel").pack(anchor="w")
+            top = ttk.Frame(card, style="Card.TFrame")
+            top.pack(fill="x", pady=(10, 2))
             cb = ttk.Combobox(top, state="readonly", width=34)
             cb.pack(side="left")
             cb.bind("<<ComboboxSelected>>", lambda _e, t=tool: self._ver_note(t))
-            ttk.Button(top, text="Activate", style="Accent.TButton", command=lambda t=tool: self.activate(t)).pack(side="left", padx=8)
-            active = ttk.Label(top, text="")
-            active.pack(side="left", padx=8)
-            note = ttk.Label(box, text="", style="Dim.TLabel", wraplength=860)
-            note.pack(anchor="w", padx=10, pady=(0, 4))
+            self._button(top, "Activate", lambda t=tool: self.activate(t), style="Accent.TButton").pack(side="left", padx=10)
+            active = ttk.Label(top, text="", style="Card.TLabel")
+            active.pack(side="left", padx=10)
+            note = ttk.Label(card, text="", style="RowMuted.TLabel", wraplength=940, justify="left")
+            note.pack(anchor="w", pady=(6, 0))
             self.ver[tool] = dict(cb=cb, active=active, note=note)
         self.refresh_versions()
 
@@ -620,33 +670,42 @@ class App(tk.Tk):
     # ------------------------------------------------------------------ CONFIG tab
     def _build_config_tab(self):
         f = self.tab_config
-        left = ttk.Frame(f)
-        left.pack(side="left", fill="y", padx=(10, 4), pady=10)
-        ttk.Label(left, text="Files").pack(anchor="w")
-        self.cfg_list = tk.Listbox(left, width=34, exportselection=False, activestyle="none", height=12)
-        self.cfg_list.pack(fill="y", expand=True)
+        p = self.theme["palette"]
+        left = ttk.Frame(f, style="Tab.TFrame")
+        left.pack(side="left", fill="y", padx=(14, 6), pady=14)
+        ttk.Label(left, text="Files", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 6))
+        list_holder = tk.Frame(left, background=p["border"])
+        list_holder.pack(fill="y", expand=True)
+        self.cfg_list = tk.Listbox(list_holder, width=34, exportselection=False, activestyle="none", height=12,
+                                   relief="flat", borderwidth=0, highlightthickness=0,
+                                   font=self.theme["font"], selectmode="browse")
+        self.cfg_list.configure(selectbackground=p["accent"], selectforeground=p["on_accent"],
+                                background=p["surface"], foreground=p["text"])
+        self.cfg_list.pack(padx=1, pady=1, fill="both", expand=True)
         self.cfg_list.bind("<<ListboxSelect>>", self._cfg_select)
-        right = ttk.Frame(f)
-        right.pack(side="left", fill="both", expand=True, padx=(4, 10), pady=10)
-        bar = ttk.Frame(right)
-        bar.pack(fill="x", pady=(0, 6))
-        ttk.Button(bar, text="Save", style="Accent.TButton", command=self.cfg_save).pack(side="left")
-        ttk.Button(bar, text="Reload", command=lambda: self._cfg_open(self.cfg_index)).pack(side="left", padx=4)
-        ttk.Button(bar, text="Open in Notepad", command=self.cfg_external).pack(side="left")
-        ttk.Button(bar, text="PHP extensions...", command=self.php_extensions).pack(side="left", padx=(14, 0))
-        ttk.Button(bar, text="Test Apache config", command=self.test_apache).pack(side="left", padx=4)
-        ttk.Button(bar, text="Restart Apache", command=lambda: self.svc_action("httpd", "restart")).pack(side="left")
+        right = ttk.Frame(f, style="Tab.TFrame")
+        right.pack(side="left", fill="both", expand=True, padx=(6, 14), pady=14)
+        bar = ttk.Frame(right, style="Tab.TFrame")
+        bar.pack(fill="x", pady=(0, 8))
+        self._button(bar, "Save", self.cfg_save, style="Accent.TButton").pack(side="left")
+        self._button(bar, "Reload", lambda: self._cfg_open(self.cfg_index)).pack(side="left", padx=6)
+        self._button(bar, "Open in Notepad", self.cfg_external).pack(side="left")
+        self._button(bar, "PHP extensions...", self.php_extensions).pack(side="left", padx=(16, 0))
+        self._button(bar, "Test Apache config", self.test_apache).pack(side="left", padx=6)
+        self._button(bar, "Restart Apache", lambda: self.svc_action("httpd", "restart")).pack(side="left")
         self.cfg_title = ttk.Label(right, text="Select a file on the left.", style="Dim.TLabel")
-        self.cfg_title.pack(anchor="w")
-        holder = ttk.Frame(right)
+        self.cfg_title.pack(anchor="w", pady=(0, 6))
+        holder = tk.Frame(right, background=p["border"])
         holder.pack(fill="both", expand=True)
-        self.editor = tk.Text(holder, wrap="none", undo=True, font=("Consolas", 10), relief="solid", borderwidth=1)
+        self.editor = tk.Text(holder, wrap="none", undo=True, font=self.theme["mono_font"],
+                              relief="flat", borderwidth=0, highlightthickness=0, padx=8, pady=6,
+                              background=p["surface"], foreground=p["text"], insertbackground=p["text"])
         ys = ttk.Scrollbar(holder, command=self.editor.yview)
         xs = ttk.Scrollbar(holder, orient="horizontal", command=self.editor.xview)
         self.editor.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
         ys.pack(side="right", fill="y")
         xs.pack(side="bottom", fill="x")
-        self.editor.pack(fill="both", expand=True)
+        self.editor.pack(side="left", fill="both", expand=True, padx=1, pady=1)
 
     def refresh_config_list(self, keep: bool = False):
         self.cfg_files = core.config_files(self.cfg)
@@ -760,23 +819,23 @@ class App(tk.Tk):
     # ------------------------------------------------------------------ VIRTUAL HOSTS tab
     def _build_vhosts_tab(self):
         f = self.tab_vhosts
-        bar = ttk.Frame(f)
-        bar.pack(fill="x", padx=12, pady=(12, 6))
-        ttk.Button(bar, text="Add", command=self.vh_add).pack(side="left")
-        ttk.Button(bar, text="Edit", command=self.vh_edit).pack(side="left", padx=4)
-        ttk.Button(bar, text="Remove", command=self.vh_remove).pack(side="left")
-        ttk.Button(bar, text="Scan www folder", command=self.vh_scan).pack(side="left", padx=(14, 0))
-        ttk.Button(bar, text="Open in browser", command=self.vh_open).pack(side="left", padx=4)
-        ttk.Button(bar, text="Apply (hosts file + Apache)", style="Accent.TButton", command=self.vh_apply).pack(side="right")
+        bar = ttk.Frame(f, style="Tab.TFrame")
+        bar.pack(fill="x", padx=14, pady=(14, 8))
+        self._button(bar, "Add", self.vh_add, style="Accent.TButton").pack(side="left")
+        self._button(bar, "Edit", self.vh_edit).pack(side="left", padx=6)
+        self._button(bar, "Remove", self.vh_remove, style="Danger.TButton").pack(side="left")
+        self._button(bar, "Scan www folder", self.vh_scan).pack(side="left", padx=(16, 0))
+        self._button(bar, "Open in browser", self.vh_open).pack(side="left", padx=6)
+        self._button(bar, "Apply (hosts file + Apache)", self.vh_apply, style="Accent.TButton").pack(side="right")
         cols = ("domain", "folder", "port", "aliases")
         self.vh_tree = ttk.Treeview(f, columns=cols, show="headings", selectmode="browse", height=12)
-        for c, w in (("domain", 200), ("folder", 420), ("port", 60), ("aliases", 220)):
+        for c, w in (("domain", 220), ("folder", 460), ("port", 70), ("aliases", 240)):
             self.vh_tree.heading(c, text=c.capitalize())
             self.vh_tree.column(c, width=w, anchor="w")
-        self.vh_tree.pack(fill="both", expand=True, padx=12, pady=6)
+        self.vh_tree.pack(fill="both", expand=True, padx=14, pady=6)
         self.vh_tree.bind("<Double-1>", lambda _e: self.vh_edit())
-        self.vh_status = ttk.Label(f, text="", style="Dim.TLabel", wraplength=900)
-        self.vh_status.pack(anchor="w", padx=12, pady=(0, 10))
+        self.vh_status = ttk.Label(f, text="", style="Dim.TLabel", wraplength=980, justify="left")
+        self.vh_status.pack(anchor="w", padx=14, pady=(0, 12))
         self.refresh_vhosts()
 
     def refresh_vhosts(self):
@@ -888,28 +947,28 @@ class App(tk.Tk):
         f = self.tab_apps
         self.app_rows = {}
         for key, name, desc in APPS:
-            box = ttk.LabelFrame(f, text=name)
-            box.pack(fill="x", padx=12, pady=6)
-            top = ttk.Frame(box)
-            top.pack(fill="x", padx=8, pady=8)
-            info = ttk.Frame(top)
+            card = theme.make_card(f, padding=(18, 16))
+            card._card_outer.pack(fill="x", padx=14, pady=6)
+            top = ttk.Frame(card, style="Card.TFrame")
+            top.pack(fill="x")
+            info = ttk.Frame(top, style="Card.TFrame")
             info.pack(side="left", fill="x", expand=True)
-            ttk.Label(info, text=desc).pack(anchor="w")
-            st = ttk.Label(info, text="", style="Dim.TLabel")
-            st.pack(anchor="w")
-            ttk.Button(top, text="Install / update", style="Accent.TButton",
-                       command=lambda k=key: self.install_app(k)).pack(side="right")
+            ttk.Label(info, text=name, style="CardTitle.TLabel").pack(anchor="w")
+            ttk.Label(info, text=desc, style="Card.TLabel", wraplength=760, justify="left").pack(anchor="w", pady=(4, 0))
+            st = ttk.Label(info, text="", style="RowMuted.TLabel")
+            st.pack(anchor="w", pady=(2, 0))
+            self._button(top, "Install / update", lambda k=key: self.install_app(k), style="Accent.TButton").pack(side="right")
             if key == "phpmyadmin":
-                ttk.Button(top, text="Open", command=lambda: webbrowser.open("http://localhost/phpmyadmin/")).pack(side="right", padx=6)
+                self._button(top, "Open", lambda: webbrowser.open("http://localhost/phpmyadmin/")).pack(side="right", padx=8)
             self.app_rows[key] = st
-        bar = ttk.Frame(f)
-        bar.pack(fill="x", padx=12, pady=8)
-        ttk.Button(bar, text="Install from URL (zip)...", command=self.install_url).pack(side="left")
-        ttk.Button(bar, text="Open apps folder", command=lambda: core.open_path(core.BASE_DIR)).pack(side="left", padx=6)
-        self.progress = ttk.Progressbar(f, mode="determinate", maximum=100)
-        self.progress.pack(fill="x", padx=12, pady=(4, 2))
+        bar = ttk.Frame(f, style="Tab.TFrame")
+        bar.pack(fill="x", padx=14, pady=(12, 4))
+        self._button(bar, "Install from URL (zip)...", self.install_url).pack(side="left")
+        self._button(bar, "Open apps folder", lambda: core.open_path(core.BASE_DIR)).pack(side="left", padx=8)
+        self.progress = ttk.Progressbar(f, mode="determinate", maximum=100, style="Accent.Horizontal.TProgressbar")
+        self.progress.pack(fill="x", padx=14, pady=(6, 2))
         ttk.Label(f, text=("Tip: 'Install from URL' also adds another version of a tool - e.g. folder name php-8.4.1 with a PHP zip URL - "
-                           "then switch to it on the Versions tab."), style="Dim.TLabel", wraplength=900).pack(anchor="w", padx=12, pady=4)
+                           "then switch to it on the Versions tab."), style="Dim.TLabel", wraplength=980, justify="left").pack(anchor="w", padx=14, pady=4)
         self.refresh_apps()
 
     def refresh_apps(self):
@@ -997,5 +1056,6 @@ class App(tk.Tk):
 
 
 def main():
+    core.set_dpi_awareness()       # must run before the first window for crisp text on HiDPI
     core.set_app_user_model_id()   # lets the taskbar show our icon instead of Python's
     App().mainloop()

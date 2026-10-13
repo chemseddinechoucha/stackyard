@@ -113,24 +113,15 @@ finds no tools at all on its first start, it offers to do this for you.
 
 ## 5. The main window
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ [logo] Stackyard   D:\dev        Administrator   [Change root folder...] │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Services | Versions | Configuration | Virtual hosts | Apps              │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                         the selected tab                          │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────────────┤
-│ Log                                                          [Clear]     │
-│ [10:42:07] Apache started on port 80.                                    │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+![Stackyard main window](assets/screenshot-main.png)
+
+The layout is built for readability: comfortable type sizes, roomy spacing and a light blue/grey theme, with
+the text kept sharp on high-DPI displays.
 
 **Header**
 
-- The grey path is the current **root folder**.
-- **Administrator** (green) means Stackyard runs with administrator rights. If it is not, a **Restart as
+- The grey line under the title shows the current **root folder**.
+- **Administrator** (a green badge) means Stackyard runs with administrator rights. If it is not, a **Restart as
   administrator** button appears instead. You only need it to edit the Windows hosts file.
 - **Change root folder...** lets you choose another root folder, for example `F:\` or `E:\tools`. Stop all services
   first. Stackyard asks for confirmation, offers to create a `www` folder if the new root has none, and moves virtual
