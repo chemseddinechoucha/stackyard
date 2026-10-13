@@ -1,7 +1,7 @@
 # Stackyard — User Manual
 
 <!-- version:start -->
-![version](https://img.shields.io/badge/version-0.2.0-2f6feb)
+![version](https://img.shields.io/badge/version-0.2.1-2f6feb)
 <!-- version:end -->
 
 Stackyard is a small Windows application for running a local PHP development environment. From one window you can

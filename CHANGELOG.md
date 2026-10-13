@@ -5,6 +5,12 @@ All notable changes to Stackyard are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-13
+
+### Fixed
+
+- **versioning:** make the commit-msg bump land in the commit
+
 ## [0.2.0] - 2026-10-13
 
 ### Added
@@ -71,3 +77,4 @@ running a local PHP development environment from a single window.
 [0.1.1]: https://example.com/compare/v0.1.0...v0.1.1
 [0.1.0]: https://example.com/releases/tag/v0.1.0
 [0.2.0]: https://github.com/chemseddinechoucha/stackyard/releases/tag/v0.2.0
+[0.2.1]: https://github.com/chemseddinechoucha/stackyard/releases/tag/v0.2.1

@@ -13,18 +13,28 @@ On each commit it bumps ``VERSION``, moves the CHANGELOG ``[Unreleased]`` notes
 (plus this commit) into a new dated release section, refreshes the README version
 badge and stages those three files so they are part of the commit.
 
+Git writes the commit's tree *before* the ``commit-msg`` hook runs, so a hook
+cannot add files to the commit it is invoked for. The hook therefore works in two
+passes: the first run bumps and stages the version files and pauses the commit;
+running the same commit again includes them and the commit goes through. Running
+``bump`` explicitly stages the files too, so the following commit just picks them
+up.
+
 Usage:
     python versioning.py current
     python versioning.py preview "feat(ui): dark mode"
     python versioning.py bump minor "optional message"
-    python versioning.py hook .git/COMMIT_EDITMSG     # used by the git hook
+    python versioning.py hook .git/COMMIT_EDITMSG              # commit-msg hook
+    python versioning.py prepare .git/COMMIT_EDITMSG message   # prepare-commit-msg hook
 
-Add ``[skip version]`` anywhere in the commit message to keep the version as is
-(merge commits are skipped automatically).
+Add ``[skip version]`` anywhere in the commit message to keep the version as is.
+Merges are skipped automatically. Amendments are skipped when Git reports the
+amend to the ``prepare-commit-msg`` hook (``git commit --amend`` without ``-m``);
+``git commit --amend -m "..."`` looks like a normal commit to Git, so add
+``[skip version]`` there to avoid a bump.
 """
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -111,6 +121,52 @@ def git(*args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout
+
+
+def git_dir() -> Path:
+    try:
+        out = git("rev-parse", "--git-dir").strip()
+        return (ROOT / out).resolve()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return ROOT / ".git"
+
+
+def pending_file() -> Path:
+    """Records a bump that has been staged but not yet committed (see run_hook)."""
+    return git_dir() / "STACKYARD_VERSION_PENDING"
+
+
+def write_pending(version: str) -> None:
+    try:
+        pending_file().write_text(version + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_pending() -> None:
+    try:
+        pending_file().unlink()
+    except OSError:
+        pass
+
+
+def skip_file() -> Path:
+    """Set by the prepare-commit-msg hook for commits that must not bump."""
+    return git_dir() / "STACKYARD_VERSION_SKIP"
+
+
+def write_skip() -> None:
+    try:
+        skip_file().write_text("skip\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_skip() -> None:
+    try:
+        skip_file().unlink()
+    except OSError:
+        pass
 
 
 def repo_url() -> str:
@@ -242,9 +298,21 @@ def release(message: str, dry_run: bool = False, kind_override: str | None = Non
     return new
 
 
+def prepare_commit_msg(source: str) -> int:
+    """prepare-commit-msg hook: flag commits that must not bump.
+
+    Git passes the message source as the second hook argument: ``commit <sha>``
+    for ``--amend``/``-c``/``-C`` and ``merge``/``squash`` for merges. A normal
+    commit clears the flag so a stale one cannot leak into the next commit.
+    """
+    if source.startswith("commit") or source in ("merge", "squash"):
+        write_skip()
+    else:
+        clear_skip()
+    return 0
+
+
 def run_hook(msg_path: str, dry_run: bool = False) -> int:
-    if os.environ.get("GIT_REFLOG_ACTION", "").startswith("commit (amend"):
-        return 0                                      # amending must not bump again
     try:
         message = Path(msg_path).read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -252,8 +320,37 @@ def run_hook(msg_path: str, dry_run: bool = False) -> int:
     subject = next((ln for ln in message.splitlines() if ln.strip() and not ln.startswith("#")), "")
     if subject.startswith("Merge ") or "[skip version]" in message.lower():
         return 0
-    release(message, dry_run=dry_run)
-    return 0
+    if skip_file().exists():                          # amending a commit must not bump again
+        clear_skip()
+        return 0
+
+    if dry_run:
+        release(message, dry_run=True)
+        return 0
+
+    # Git writes the commit's tree *before* the commit-msg hook runs, so files
+    # staged here are not part of this commit. Work in two passes instead: the
+    # first run bumps and stages the version files and pauses the commit; running
+    # the same commit again has them already staged, so it goes through.
+    marker = pending_file()
+    if marker.exists():
+        try:
+            expected = marker.read_text(encoding="utf-8").strip()
+        except OSError:
+            expected = ""
+        clear_pending()
+        if expected and read_version() == expected:
+            return 0                                  # second pass: include the bump
+
+    new = release(message)
+    write_pending(new)
+    print(
+        f"Version bumped to {new} and staged, but the commit was paused: Git builds "
+        "the commit before this hook runs, so the new files are not in it yet.\n"
+        "Run the same commit again to include them.",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def main(argv: list[str]) -> int:
@@ -272,9 +369,12 @@ def main(argv: list[str]) -> int:
             print(f"unknown bump kind: {kind!r} (expected major, minor or patch)", file=sys.stderr)
             return 1
         release(rest[1] if len(rest) > 1 else f"chore: {kind} release", kind_override=kind)
+        write_pending(read_version())                 # keep the next commit from bumping again
     elif cmd == "hook":
         return run_hook(rest[0] if rest else ".git/COMMIT_EDITMSG",
                         dry_run="--dry-run" in rest)
+    elif cmd == "prepare":
+        return prepare_commit_msg(rest[1] if len(rest) > 1 else "")
     else:
         print(__doc__)
     return 0
