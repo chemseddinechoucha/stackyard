@@ -29,9 +29,15 @@ from pathlib import Path
 from typing import Callable, Optional
 
 IS_WIN = os.name == "nt"
+IS_FROZEN = bool(getattr(sys, "frozen", False))   # True inside a PyInstaller build
 NO_WINDOW = 0x08000000 if IS_WIN else 0
 
-APP_DIR = Path(__file__).resolve().parent
+# Where Stackyard keeps its own files (settings.json, stackyard.json, run\, logs\).
+# A frozen .exe writes next to itself; running from source, it writes next to this file.
+APP_DIR = Path(sys.executable).resolve().parent if IS_FROZEN else Path(__file__).resolve().parent
+# Read-only bundled resources (assets\): extracted to _MEIPASS when frozen.
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) if IS_FROZEN else APP_DIR
+
 SETTINGS_FILE = APP_DIR / "settings.json"   # remembers the chosen root folder
 CONFIG_FILE = APP_DIR / "stackyard.json"    # active versions, virtual hosts, custom services
 
@@ -198,9 +204,13 @@ def set_dpi_awareness() -> None:
 
 
 def relaunch_as_admin() -> None:
-    script = str(Path(sys.argv[0]).resolve())
-    params = " ".join(f'"{a}"' for a in [script] + sys.argv[1:])
-    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+    if IS_FROZEN:
+        exe = sys.executable
+        params = " ".join(f'"{a}"' for a in sys.argv[1:])
+    else:
+        exe = sys.executable
+        params = " ".join(f'"{a}"' for a in [str(Path(sys.argv[0]).resolve())] + sys.argv[1:])
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
 
 
 def open_path(p) -> None:

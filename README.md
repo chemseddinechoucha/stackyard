@@ -1,5 +1,9 @@
 # Stackyard — User Manual
 
+<!-- version:start -->
+![version](https://img.shields.io/badge/version-0.2.0-2f6feb)
+<!-- version:end -->
+
 Stackyard is a small Windows application for running a local PHP development environment. From one window you can
 start and stop **Apache** and **MySQL**, switch between versions of **Apache, PHP, MySQL and Node.js**, edit their
 configuration files, create **virtual hosts**, and install **phpMyAdmin, Composer and Node.js**.
@@ -99,6 +103,44 @@ D:\dev\                      <- root folder
 
 3. Start it with `stackyard.pyw` (no console window) or `start-stackyard.bat` (keeps a console open, useful if
    something fails to start and you want to read the Python error).
+
+### Windows executable (no Python needed)
+
+Instead of the Python source you can run the single-file build `Stackyard.exe`. It needs no Python installation.
+
+- Put `Stackyard.exe` in the `stackyard` folder of your root, exactly where `stackyard.pyw` would go
+  (for example `D:\dev\stackyard\Stackyard.exe`), and double-click it. Stackyard still finds the tools in the
+  root folder the same way. Its `stackyard.json`, `settings.json`, `run\` and `logs\` files are written next to
+  the `.exe`.
+- The executable bundles the icon and images; there is nothing else to copy.
+
+**Building the .exe yourself**
+
+The build uses [PyInstaller](https://pyinstaller.org/). From the project folder:
+
+```
+python -m pip install pyinstaller
+build-exe.bat
+```
+
+The result is `dist\Stackyard.exe` (single file, no console window, custom icon). The settings live in
+`Stackyard.spec`; run the build from the project folder so the `assets` folder is picked up.
+
+### Automatic versioning
+
+The release number is kept in `VERSION` and shown as the badge at the top of this page. A git hook updates it on
+every commit, following [Conventional Commits](https://www.conventionalcommits.org/):
+
+| Commit message starts with | New release number |
+|---|---|
+| `fix: ...` (or anything else) | patch, e.g. `0.1.1` → `0.1.2` |
+| `feat: ...` | minor, e.g. `0.1.2` → `0.2.0` |
+| `...!:` or a `BREAKING CHANGE:` footer | major, e.g. `0.2.0` → `1.0.0` |
+
+The hook bumps `VERSION`, moves the `CHANGELOG.md` notes into a new dated release section and refreshes the badge
+above, then includes those three files in your commit. Install it once per clone with `install-hooks.bat` (or
+`python install_hooks.py`). Merge commits are skipped; add `[skip version]` to a commit message to keep the current
+number.
 
 **Rules for version folders**
 

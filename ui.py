@@ -16,7 +16,7 @@ import core
 import installer
 import theme
 
-ASSETS = core.APP_DIR / "assets"
+ASSETS = core.RESOURCE_DIR / "assets"
 
 STATE_COLORS = {"running": theme.PALETTE["success"], "starting": theme.PALETTE["warning"],
                 "external": theme.PALETTE["info"], "stopped": theme.PALETTE["stopped"]}

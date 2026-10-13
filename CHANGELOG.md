@@ -5,6 +5,22 @@ All notable changes to Stackyard are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-10-13
+
+### Added
+
+- **build:** standalone Windows build and automatic versioning
+- Standalone Windows build: `Stackyard.spec` and `build-exe.bat` produce a single
+  `dist\Stackyard.exe` (no console window, custom icon, no Python required).
+- The app is now frozen-aware (`core.IS_FROZEN`): a packaged build keeps
+  `stackyard.json`, `settings.json`, `run\` and `logs\` next to the `.exe`, reads
+  bundled images from `core.RESOURCE_DIR`, and relaunch-as-administrator works from
+  the `.exe`.
+- `build/` and `dist/` added to `.gitignore`.
+- Automatic versioning: a `commit-msg` git hook (`versioning.py` + `install_hooks.py`)
+  bumps `VERSION` from the commit message (Conventional Commits), updates this
+  changelog and the README version badge, and stages them with the commit.
+
 ## [0.1.1] - 2026-10-13
 
 ### Changed
@@ -52,5 +68,6 @@ running a local PHP development environment from a single window.
 - `STACKYARD_BASE` environment variable to override the root folder for a single launch.
 - Full user manual in `README.md`.
 
-[Unreleased]: https://example.com/compare/v0.1.0...HEAD
+[0.1.1]: https://example.com/compare/v0.1.0...v0.1.1
 [0.1.0]: https://example.com/releases/tag/v0.1.0
+[0.2.0]: https://github.com/chemseddinechoucha/stackyard/releases/tag/v0.2.0
