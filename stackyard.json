@@ -1,0 +1,12 @@
+{
+  "active": {
+    "httpd": "httpd-2.4",
+    "php": "php-8.5.11",
+    "mysql": "mysql-8.0.46",
+    "nodejs": "nodejs-24.21.0"
+  },
+  "vhosts": [],
+  "services": [],
+  "stop_on_exit": false,
+  "mysql_root_password": ""
+}
