@@ -560,7 +560,21 @@ def ensure_php_ini(php_dir: Path) -> bool:
         write_text(ini, new)
     if created:
         enable_php_extensions(php_dir, DEFAULT_PHP_EXTENSIONS)
+    normalize_php_extensions(php_dir)
     return created
+
+
+# A real extension directive: the optional ';' must sit immediately before 'extension', so the
+# indented documentation examples in php.ini-development (e.g. ";   extension=mysqli") are not
+# mistaken for a directive. 'comment' is the optional marker, 'body' the line without it, and
+# 'name' the extension name (without the php_ prefix or .dll suffix).
+_EXT_RE = (r'^[ \t]*(?P<comment>;)?(?P<body>(?:zend_)?extension[ \t]*=[ \t]*"?(?:php_)?'
+           r'(?P<name>[A-Za-z0-9_]+)(?:\.dll)?"?[ \t\r]*)$')
+
+
+def _ext_name(m: re.Match) -> str:
+    name = m.group("name")
+    return name[4:] if name.lower().startswith("php_") else name
 
 
 def _ext_available(php_dir: Path, name: str) -> bool:
@@ -576,29 +590,70 @@ def list_php_extensions(php_dir: Path) -> list[tuple[str, bool]]:
         ensure_php_ini(php_dir)
     text = read_text(ini)
     out: dict[str, bool] = {}
-    for m in re.finditer(r'(?m)^[ \t]*(;?)[ \t]*(?:zend_)?extension[ \t]*=[ \t]*"?([A-Za-z0-9_]+)(?:\.dll)?"?[ \t\r]*$', text):
-        name = m.group(2)
-        if name.startswith("php_"):
-            name = name[4:]
+    for m in re.finditer(r'(?m)' + _EXT_RE, text):
+        name = _ext_name(m)
         if not _ext_available(php_dir, name):
             continue
-        enabled = m.group(1) == ""
+        enabled = m.group("comment") != ";"
         out[name] = out.get(name, False) or enabled
     return sorted(out.items())
 
 
+def _ext_line_re(name: str) -> re.Pattern:
+    return re.compile(r'(?m)^[ \t]*(?P<comment>;)?(?P<body>(?:zend_)?extension[ \t]*=[ \t]*"?'
+                      r'(?:php_)?%s(?:\.dll)?"?[ \t\r]*)$' % re.escape(name))
+
+
 def set_php_extensions(php_dir: Path, states: dict[str, bool]) -> None:
+    """Turn extensions on/off and keep exactly one line per extension.
+
+    Duplicates make PHP print "Module ... is already loaded", so when enabling we keep the last
+    matching line and comment out any others."""
     ini = php_dir / "php.ini"
     text = read_text(ini)
     for name, enable in states.items():
-        pat = re.compile(
-            r'(?m)^([ \t]*);?[ \t]*((?:zend_)?extension[ \t]*=[ \t]*"?(?:php_)?%s(?:\.dll)?"?[ \t\r]*)$' % re.escape(name)
-        )
-        if pat.search(text):
-            text = pat.sub(lambda m: (m.group(2) if enable else ";" + m.group(2)), text)
-        elif enable:
-            text = text.rstrip("\n") + f"\nextension={name}\n"
+        matches = list(_ext_line_re(name).finditer(text))
+        if not matches:
+            if enable:
+                text = text.rstrip("\n") + f"\nextension={name}\n"
+            continue
+        parts, last = [], 0
+        for i, m in enumerate(matches):
+            parts.append(text[last:m.start()])
+            body = m.group("body")
+            parts.append(body if (enable and i == len(matches) - 1) else ";" + body)
+            last = m.end()
+        parts.append(text[last:])
+        text = "".join(parts)
     write_text(ini, text, backup=True)
+
+
+def normalize_php_extensions(php_dir: Path) -> bool:
+    """Comment out duplicate active extension lines (e.g. left over from an older version, or
+    from a php.ini with two extension blocks). Idempotent; returns True when the file changed."""
+    ini = php_dir / "php.ini"
+    if not ini.exists():
+        return False
+    text = read_text(ini)
+    matches = list(re.finditer(r'(?m)' + _EXT_RE, text))
+    keep: dict[str, int] = {}                       # name -> index of the line to leave enabled
+    for i, m in enumerate(matches):
+        if m.group("comment") != ";":
+            keep[_ext_name(m).lower()] = i
+    parts, last, changed = [], 0, False
+    for i, m in enumerate(matches):
+        parts.append(text[last:m.start()])
+        name = _ext_name(m).lower()
+        if m.group("comment") != ";" and keep.get(name) != i:
+            parts.append(";" + m.group("body"))
+            changed = True
+        else:
+            parts.append(m.group(0))
+        last = m.end()
+    parts.append(text[last:])
+    if changed:
+        write_text(ini, "".join(parts), backup=True)
+    return changed
 
 
 def enable_php_extensions(php_dir: Path, names: list[str]) -> list[str]:
@@ -825,25 +880,37 @@ def sync_hosts(cfg: Config) -> None:
     _write_hosts(new)
 
 
+def _norm_path(p) -> str:
+    return os.path.normcase(os.path.normpath(os.path.abspath(str(p))))
+
+
 def scan_www(cfg: Config) -> list[dict]:
-    """Create <folder>.test virtual hosts for every sub-folder of www that has none yet."""
-    added = []
-    known = {os.path.normcase(os.path.normpath(v["path"])) for v in cfg.vhosts}
+    """Create <folder>.localhost virtual hosts for every sub-folder of www that has none yet.
+
+    *.localhost names resolve to 127.0.0.1 in the browser, so no hosts-file entry and no
+    administrator rights are needed. Existing virtual hosts are never modified: a project folder
+    that is already covered by a host (the folder itself, a sub-folder such as Laravel's public/,
+    or the whole www) is left as it is, and only the missing ones are added."""
+    added: list[dict] = []
+    known = [_norm_path(v["path"]) for v in cfg.vhosts]
     domains = {v["domain"] for v in cfg.vhosts}
     if not WWW_DIR.is_dir():
         return added
     for d in sorted(WWW_DIR.iterdir()):
         if not d.is_dir() or d.name.startswith(".") or d.name.lower() in ("phpmyadmin",):
             continue
-        root = d / "public" if (d / "public").is_dir() else d
-        domain = re.sub(r"[^a-z0-9-]", "-", d.name.lower()).strip("-") + ".test"
-        if not DOMAIN_RE.match(domain) or domain in domains:
+        folder = _norm_path(d)
+        # if an existing host points at this folder, inside it, or above it, the project is covered
+        if any(k == folder or k.startswith(folder + os.sep) or folder.startswith(k + os.sep) for k in known):
             continue
-        if os.path.normcase(os.path.normpath(str(root))) in known:
+        root = d / "public" if (d / "public").is_dir() else d
+        domain = re.sub(r"[^a-z0-9-]", "-", d.name.lower()).strip("-") + ".localhost"
+        if not DOMAIN_RE.match(domain) or domain in domains:
             continue
         v = {"domain": domain, "path": str(root), "port": 80, "aliases": ""}
         cfg.vhosts.append(v)
         domains.add(domain)
+        known.append(_norm_path(root))
         added.append(v)
     if added:
         cfg.save()
@@ -1240,6 +1307,20 @@ def startup(cfg: Config) -> list[str]:
         d = cfg.active_dir(tool)
         if d and cfg.data["active"].get(tool) != d.name:
             cfg.data["active"][tool] = d.name
+    added = scan_www(cfg)  # auto-detect projects in www; existing virtual hosts are kept as they are
+    if added:
+        notes.append(f"Detected {len(added)} new project(s) in www: " + ", ".join(v["domain"] for v in added))
+        try:  # apply immediately so the new sites work without pressing Apply
+            res = apply_vhosts(cfg)
+            if res["test_ok"]:
+                notes.append("Apache configuration regenerated and tested OK.")
+            else:
+                first = (res.get("output") or "").strip().splitlines()
+                notes.append("WARNING: Apache configuration test failed: " + (first[0] if first else "unknown error"))
+            if not res["hosts_ok"]:
+                notes.append("WARNING: the Windows hosts file was not updated: " + res.get("hosts_error", ""))
+        except (StackyardError, OSError) as e:
+            notes.append(f"WARNING: could not apply the new virtual hosts: {e}")
     cfg.save()
     return notes
 

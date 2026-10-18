@@ -1,7 +1,7 @@
 # Stackyard — User Manual
 
 <!-- version:start -->
-![version](https://img.shields.io/badge/version-0.2.1-2f6feb)
+![version](https://img.shields.io/badge/version-0.3.0-2f6feb)
 <!-- version:end -->
 
 Stackyard is a small Windows application for running a local PHP development environment. From one window you can
@@ -399,8 +399,14 @@ Names ending in `.localhost` resolve to your own computer in browsers, so Stacky
 for them. Some command-line tools, and PHP's own outgoing HTTP requests, may not resolve them; use `.test` if you need
 that.
 
-**Scan www folder** creates names ending in `.test`. Rename them to `.localhost` if you prefer. It uses a `public`
-subfolder as the document root when one exists, and skips `phpmyadmin` and hidden folders.
+**Stackyard detects your projects automatically.** Every time it starts it looks at the folders in `www` and creates a
+virtual host for each one that does not have one yet, then applies it right away. Folders that already have a virtual
+host are left untouched, so your own edits are never overwritten. Names ending in `.localhost` are used, so the new
+sites open in the browser without a hosts-file change or administrator rights.
+
+**Scan www folder** does the same thing on demand. It uses a `public` subfolder as the document root when one exists
+(for example with Laravel), and skips `phpmyadmin` and hidden folders. Rename a site to `.test` if you need it to work
+in command-line tools too (that name does need a hosts-file entry).
 
 ### If the hosts file cannot be updated
 

@@ -5,6 +5,38 @@ All notable changes to Stackyard are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-18
+
+### Added
+
+- **vhosts:** auto-detect projects in www on startup
+
+## 0.3
+
+### Added
+
+- **vhosts:** automatic project detection. On every start Stackyard scans the folders in
+  `www` and creates a virtual host for each one that does not have one yet, then applies
+  it immediately (regenerates the Apache configuration and updates the hosts file), so the
+  site works without pressing Apply.
+
+### Changed
+
+- **vhosts:** detected sites now use `.localhost` names, which resolve in the browser
+  without a hosts-file entry or administrator rights. A `public` subfolder is used as the
+  document root when one exists (for example with Laravel). The **Scan www folder** button
+  behaves the same.
+
+### Fixed
+
+- **vhosts:** detection never touches an existing virtual host. A project folder that is
+  already served by a host (the folder itself, a sub-folder such as `public/`, or the whole
+  `www`) is skipped, so re-scanning cannot create duplicates or overwrite your edits.
+- **php:** enabling extensions no longer creates duplicate `extension=` lines, which made PHP
+  and Composer print "Module ... is already loaded". The toggler now keeps one line per
+  extension, no longer uncomments the indented `; extension=mysqli` example in
+  `php.ini-development`, and an existing `php.ini` is repaired on start.
+
 ## [0.2.1] - 2026-10-13
 
 ### Fixed
@@ -23,9 +55,6 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   bundled images from `core.RESOURCE_DIR`, and relaunch-as-administrator works from
   the `.exe`.
 - `build/` and `dist/` added to `.gitignore`.
-- Automatic versioning: a `commit-msg` git hook (`versioning.py` + `install_hooks.py`)
-  bumps `VERSION` from the commit message (Conventional Commits), updates this
-  changelog and the README version badge, and stages them with the commit.
 
 ## [0.1.1] - 2026-10-13
 
@@ -78,3 +107,4 @@ running a local PHP development environment from a single window.
 [0.1.0]: https://example.com/releases/tag/v0.1.0
 [0.2.0]: https://github.com/chemseddinechoucha/stackyard/releases/tag/v0.2.0
 [0.2.1]: https://github.com/chemseddinechoucha/stackyard/releases/tag/v0.2.1
+[0.3.0]: https://github.com/chemseddinechoucha/stackyard/releases/tag/v0.3.0

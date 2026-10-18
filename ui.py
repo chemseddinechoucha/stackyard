@@ -349,6 +349,10 @@ class App(tk.Tk):
             self.log("WARNING: " + core.BASE_WARNING)
         self.log(f"Ready. Base folder: {core.BASE_DIR}")
         self.refresh_versions()
+        self.refresh_vhosts()
+        if len(self.cfg.vhosts) > getattr(self, "_vhosts_at_start", len(self.cfg.vhosts)):
+            self.vh_status.configure(
+                text="New project virtual hosts were auto-detected in www and applied (see Log).")
         self.after(300, self._first_run_check)
 
     def _first_run_check(self):
@@ -837,6 +841,7 @@ class App(tk.Tk):
         self.vh_status = ttk.Label(f, text="", style="Dim.TLabel", wraplength=980, justify="left")
         self.vh_status.pack(anchor="w", padx=14, pady=(0, 12))
         self.refresh_vhosts()
+        self._vhosts_at_start = len(self.cfg.vhosts)
 
     def refresh_vhosts(self):
         self.vh_tree.delete(*self.vh_tree.get_children())
